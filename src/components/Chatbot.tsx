@@ -6,7 +6,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
-import { sendChatMessage, type ChatMessage } from '../api/chat';
+import { streamChatMessage, type ChatMessage } from '../api/chat';
 
 interface UiMessage extends ChatMessage {
   id: string;
@@ -40,6 +40,7 @@ export function Chatbot() {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -47,8 +48,12 @@ export function Chatbot() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
+    if (isStreaming) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isLoading, isStreaming]);
 
   useEffect(() => {
     return () => {
@@ -58,7 +63,7 @@ export function Chatbot() {
 
   async function submitPrompt(rawText: string) {
     const trimmed = rawText.trim();
-    if (!trimmed || isLoading) {
+    if (!trimmed || isLoading || isStreaming) {
       return;
     }
 
@@ -73,26 +78,47 @@ export function Chatbot() {
     setInput('');
     setError(null);
     setIsLoading(true);
+    setIsStreaming(false);
 
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
+
+    const assistantMessageId = createMessageId();
+    let hasReceivedFirstChunk = false;
 
     try {
       const apiMessages: ChatMessage[] = nextMessages.map(({ role, content }) => ({
         role,
         content,
       }));
-      const reply = await sendChatMessage(apiMessages, controller.signal);
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: createMessageId(),
-          role: 'assistant',
-          content: reply,
+      await streamChatMessage(
+        apiMessages,
+        (_delta, fullText) => {
+          if (!hasReceivedFirstChunk) {
+            hasReceivedFirstChunk = true;
+            setIsStreaming(true);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: assistantMessageId,
+                role: 'assistant',
+                content: fullText,
+              },
+            ]);
+          } else {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, content: fullText }
+                  : msg,
+              ),
+            );
+          }
         },
-      ]);
+        controller.signal,
+      );
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         return;
@@ -106,6 +132,7 @@ export function Chatbot() {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
         setIsLoading(false);
+        setIsStreaming(false);
       }
       textareaRef.current?.focus();
     }
@@ -133,8 +160,11 @@ export function Chatbot() {
     setInput('');
     setError(null);
     setIsLoading(false);
+    setIsStreaming(false);
     textareaRef.current?.focus();
   }
+
+  const isBusy = isLoading || isStreaming;
 
   return (
     <div className="chatbot-shell">
@@ -150,7 +180,7 @@ export function Chatbot() {
           type="button"
           className="reset-button"
           onClick={handleReset}
-          disabled={messages.length === 0 && !isLoading && !error}
+          disabled={messages.length === 0 && !isBusy && !error}
         >
           새 대화
         </button>
@@ -176,7 +206,7 @@ export function Chatbot() {
                   onClick={() => {
                     void submitPrompt(prompt);
                   }}
-                  disabled={isLoading}
+                  disabled={isBusy}
                 >
                   {prompt}
                 </button>
@@ -205,7 +235,7 @@ export function Chatbot() {
               </article>
             ))}
 
-            {isLoading && (
+            {isLoading && !isStreaming && (
               <article className="message-row message-assistant">
                 <div className="message-avatar" aria-hidden="true">
                   AI
@@ -247,18 +277,17 @@ export function Chatbot() {
           onKeyDown={handleKeyDown}
           placeholder="주제·난이도를 입력하거나 퀴즈 정답을 적어보세요 (Enter 전송, Shift+Enter 줄바꿈)"
           rows={2}
-          disabled={isLoading}
+          disabled={isBusy}
           aria-label="채팅 메시지 입력"
         />
         <button
           type="submit"
           className="send-button"
-          disabled={isLoading || input.trim().length === 0}
+          disabled={isBusy || input.trim().length === 0}
         >
-          {isLoading ? '전송 중...' : '전송'}
+          {isBusy ? '전송 중...' : '전송'}
         </button>
       </form>
     </div>
   );
 }
-

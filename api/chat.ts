@@ -77,8 +77,9 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const client = new OpenAI({ apiKey });
 
-    const response = await client.responses.create({
+    const stream = await client.responses.create({
       model: MODEL_NAME,
+      stream: true,
       reasoning: {
         effort: 'none',
       },
@@ -89,15 +90,37 @@ export async function POST(request: Request): Promise<Response> {
       })),
     });
 
-    const reply = response.output_text?.trim();
-    if (!reply) {
-      return Response.json(
-        { error: '모델로부터 비어 있는 응답을 받았습니다.' },
-        { status: 502 },
-      );
-    }
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          for await (const event of stream) {
+            if (event.type === 'response.output_text.delta' && event.delta) {
+              controller.enqueue(encoder.encode(event.delta));
+            } else if (event.type === 'error') {
+              throw new Error(
+                event.message || '응답 생성 중 오류가 발생했습니다.',
+              );
+            }
+          }
+          controller.close();
+        } catch (streamError) {
+          controller.error(streamError);
+        }
+      },
+      cancel() {
+        stream.controller.abort();
+      },
+    });
 
-    return Response.json({ reply }, { status: 200 });
+    return new Response(readable, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
   } catch (error) {
     console.error('[api/chat] OpenAI API error:', error);
 
@@ -122,4 +145,3 @@ export async function GET(): Promise<Response> {
     { status: 405 },
   );
 }
-

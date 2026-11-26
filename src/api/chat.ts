@@ -5,16 +5,11 @@ export interface ChatMessage {
   content: string;
 }
 
-interface ChatSuccessResponse {
-  reply: string;
-}
+export type OnDeltaCallback = (delta: string, fullText: string) => void;
 
-interface ChatErrorResponse {
-  error?: string;
-}
-
-export async function sendChatMessage(
+export async function streamChatMessage(
   messages: ChatMessage[],
+  onDelta: OnDeltaCallback,
   signal?: AbortSignal,
 ): Promise<string> {
   const response = await fetch('/api/chat', {
@@ -26,22 +21,57 @@ export async function sendChatMessage(
     signal,
   });
 
-  const data = (await response.json().catch(() => ({}))) as
-    | ChatSuccessResponse
-    | ChatErrorResponse;
-
   if (!response.ok) {
+    const errorData = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
     const errorMessage =
-      'error' in data && typeof data.error === 'string' && data.error.length > 0
-        ? data.error
+      errorData.error && errorData.error.trim().length > 0
+        ? errorData.error
         : `요청 처리 중 오류가 발생했습니다. (HTTP ${response.status})`;
     throw new Error(errorMessage);
   }
 
-  if (!('reply' in data) || typeof data.reply !== 'string') {
-    throw new Error('서버 응답 형식이 올바르지 않습니다.');
+  if (!response.body) {
+    throw new Error('응답 스트림을 읽을 수 없습니다.');
   }
 
-  return data.reply;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let fullText = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      const chunk = decoder.decode(value, { stream: true });
+      if (chunk) {
+        fullText += chunk;
+        onDelta(chunk, fullText);
+      }
+    }
+
+    const remaining = decoder.decode();
+    if (remaining) {
+      fullText += remaining;
+      onDelta(remaining, fullText);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (fullText.trim().length === 0) {
+    throw new Error('모델로부터 비어 있는 응답을 받았습니다.');
+  }
+
+  return fullText;
 }
 
+export async function sendChatMessage(
+  messages: ChatMessage[],
+  signal?: AbortSignal,
+): Promise<string> {
+  return streamChatMessage(messages, () => {}, signal);
+}

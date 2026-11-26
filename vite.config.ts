@@ -75,15 +75,41 @@ function localApiPlugin(): Plugin {
             res.setHeader(key, value);
           });
 
-          const arrayBuffer = await webResponse.arrayBuffer();
-          res.end(Buffer.from(arrayBuffer));
+          if (webResponse.body) {
+            const reader = webResponse.body.getReader();
+            req.on('close', () => {
+              void reader.cancel();
+            });
+
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                  break;
+                }
+                res.write(Buffer.from(value));
+              }
+            } catch (streamErr) {
+              console.error('[vite local-vercel-api] Stream error:', streamErr);
+            } finally {
+              if (!res.writableEnded) {
+                res.end();
+              }
+            }
+          } else {
+            res.end();
+          }
         } catch (error) {
           console.error('[vite local-vercel-api] Error:', error);
-          res.statusCode = 500;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(
-            JSON.stringify({ error: '로컬 API 서버 실행 중 오류가 발생했습니다.' }),
-          );
+          if (!res.headersSent) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+          }
+          if (!res.writableEnded) {
+            res.end(
+              JSON.stringify({ error: '로컬 API 서버 실행 중 오류가 발생했습니다.' }),
+            );
+          }
         }
       });
     },
