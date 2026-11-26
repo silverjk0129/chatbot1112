@@ -157,6 +157,61 @@
   cursor: not-allowed;
 }
 
+.selection-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.step-indicator {
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 4px 12px;
+  border-radius: 999px;
+  letter-spacing: -0.01em;
+}
+
+.selected-topic-summary {
+  font-size: 14px;
+  color: var(--text-body);
+}
+
+.selected-topic-summary strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.difficulty-chip {
+  min-width: 72px;
+  font-weight: 600;
+}
+
+.step-back-button {
+  margin-top: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 8px;
+  text-decoration: underline;
+  transition: color 0.15s;
+}
+
+.step-back-button:hover:not(:disabled) {
+  color: var(--text-heading);
+}
+
+.step-back-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .message-list {
   display: flex;
   flex-direction: column;

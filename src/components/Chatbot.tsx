@@ -12,12 +12,14 @@ interface UiMessage extends ChatMessage {
   id: string;
 }
 
-const QUICK_PROMPTS = [
-  '여행 영어 초급 단어 알려줘',
-  '비즈니스 영어 중급 단어 알려줘',
-  '일상 회화 고급 단어 알려줘',
-  '영어 단어 알려줘',
-];
+const TOPIC_OPTIONS = [
+  '일상 회화',
+  '비즈니스 영어',
+  '공항/여행 영어',
+  '토익/수능 필수 단어',
+] as const;
+
+const DIFFICULTY_OPTIONS = ['초급', '중급', '고급'] as const;
 
 function createMessageId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -41,6 +43,7 @@ export function Chatbot() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -161,7 +164,17 @@ export function Chatbot() {
     setError(null);
     setIsLoading(false);
     setIsStreaming(false);
+    setSelectedTopic(null);
     textareaRef.current?.focus();
+  }
+
+  function handleSelectDifficulty(difficulty: string) {
+    if (!selectedTopic || isBusy) {
+      return;
+    }
+    const prompt = `주제: ${selectedTopic}\n난이도: ${difficulty}\n위 조건에 맞는 영어 단어 퀴즈를 시작해줘.`;
+    setSelectedTopic(null);
+    void submitPrompt(prompt);
   }
 
   const isBusy = isLoading || isStreaming;
@@ -194,23 +207,56 @@ export function Chatbot() {
             </div>
             <h2>어떤 영어 단어를 공부해 볼까요?</h2>
             <p>
-              주제(예: 여행, 비즈니스, IT)와 난이도(초급, 중급, 고급)를 입력해 보세요.
-              정하지 못하셨다면 그냥 말을 걸어 보셔도 좋아요!
+              아래 버튼으로 주제와 난이도를 선택하거나, 원하는 조건을 직접 입력해 보세요.
             </p>
-            <div className="quick-prompts">
-              {QUICK_PROMPTS.map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  className="quick-prompt-chip"
-                  onClick={() => {
-                    void submitPrompt(prompt);
-                  }}
-                  disabled={isBusy}
-                >
-                  {prompt}
-                </button>
-              ))}
+
+            <div className="selection-container">
+              {!selectedTopic ? (
+                <>
+                  <div className="step-indicator">1단계: 주제 선택</div>
+                  <div className="quick-prompts">
+                    {TOPIC_OPTIONS.map((topic) => (
+                      <button
+                        key={topic}
+                        type="button"
+                        className="quick-prompt-chip"
+                        onClick={() => setSelectedTopic(topic)}
+                        disabled={isBusy}
+                      >
+                        {topic}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="selected-topic-summary">
+                    선택한 주제: <strong>{selectedTopic}</strong>
+                  </div>
+                  <div className="step-indicator">2단계: 난이도 선택</div>
+                  <div className="quick-prompts">
+                    {DIFFICULTY_OPTIONS.map((difficulty) => (
+                      <button
+                        key={difficulty}
+                        type="button"
+                        className="quick-prompt-chip difficulty-chip"
+                        onClick={() => handleSelectDifficulty(difficulty)}
+                        disabled={isBusy}
+                      >
+                        {difficulty}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="step-back-button"
+                    onClick={() => setSelectedTopic(null)}
+                    disabled={isBusy}
+                  >
+                    ← 다른 주제 선택하기
+                  </button>
+                </>
+              )}
             </div>
           </section>
         ) : (
